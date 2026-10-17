@@ -1,0 +1,781 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --bg: rgba(24, 26, 32, 0.92);
+    --bg-light: rgba(38, 41, 50, 0.95);
+    --accent: #4f8cff;
+    --text: #e8eaf0;
+    --text-dim: #9aa0ae;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  /* 消息区允许拖选复制：* 通配符不继承，必须对后代元素显式放开 */
+  #messages, #messages * { user-select: text; }
+  #messages .copybtn { user-select: none; }
+  html, body { width: 100%; height: 100%; background: transparent; overflow: hidden;
+    font-family: "Microsoft YaHei", system-ui, sans-serif; }
+  /* 无框窗缩放热区：body 四周 4px 交给系统 resize，内部元素不覆盖到最外圈 */
+  body { -webkit-app-region: no-drag; }
+  #panel { -webkit-app-region: no-drag; }
+
+  /* ---------- 展开面板 ---------- */
+  #panel {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    clip-path: inset(0 round var(--radius));
+    -webkit-app-region: no-drag;
+  }
+  #titlebar {
+    height: 40px; flex: none;
+    background: var(--bg-light);
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px;
+    /* 系统级拖动：OS 负责移动窗口，与边缘缩放热区互不干扰 */
+    -webkit-app-region: drag;
+    cursor: grab;
+  }
+  #titlebar:active { cursor: grabbing; }
+  /* 标题栏内的按钮必须排除在拖动区外，否则点不动 */
+  #titlebar .dot, #titlebar .wb { -webkit-app-region: no-drag; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot.t { background: #ff5f57; cursor: pointer; }
+  .dot.b { background: #febc2e; cursor: pointer; }
+  #title { flex: 1; color: var(--text-dim); font-size: 12px; margin-left: 4px; }
+
+  /* ---------- 窗口功能条 ---------- */
+  #winbtns { display: flex; gap: 2px; }
+  .wb {
+    width: 30px; height: 26px;
+    background: transparent; border: none;
+    color: var(--text-dim); font-size: 13px;
+    cursor: pointer; border-radius: 6px;
+    line-height: 1; padding: 0;
+  }
+  .wb:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+  .wb-close:hover { background: #e81123; color: #fff; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 12px; user-select: text; cursor: text; }
+  .msgwrap { position: relative; margin-bottom: 12px; }
+  .msgwrap.user { display: flex; justify-content: flex-end; }
+  .msgwrap.user .copybtn { display: none; }
+  .copybtn {
+    position: absolute; top: -8px; right: 4px;
+    padding: 1px 8px; font-size: 11px;
+    background: var(--bg-light); color: var(--text-dim);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px; cursor: pointer; z-index: 2;
+  }
+  .copybtn:hover { color: var(--text); background: rgba(255,255,255,0.12); }
+
+  /* ---------- 历史查看层（记忆库） ---------- */
+  #historyLayer {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,0.55);
+    display: none; padding: 14px;
+  }
+  #historyLayer.open { display: block; }
+  #historyPanel {
+    width: 100%; height: 100%;
+    background: var(--bg); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #historyHead {
+    flex: none; height: 36px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px; background: var(--bg-light); color: var(--text); font-size: 12.5px;
+  }
+  #histFiles {
+    flex: none; display: flex; gap: 6px; padding: 8px 10px;
+    overflow-x: auto; background: rgba(0,0,0,0.25);
+  }
+  .histFile {
+    flex: none; padding: 3px 10px; font-size: 11.5px;
+    background: var(--bg-light); color: var(--text-dim);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; cursor: pointer;
+  }
+  .histFile.active { color: #fff; border-color: var(--accent); background: rgba(79,140,255,0.2); }
+  #histBody {
+    flex: 1; overflow-y: auto; padding: 10px 12px;
+    font-size: 12.5px; line-height: 1.6; color: var(--text);
+    user-select: text;
+  }
+  #histBody h3 { margin: 10px 0 4px; font-size: 13px; color: #9fc2ff; }
+  #histBody hr { border: none; border-top: 1px solid rgba(255,255,255,0.12); margin: 8px 0; }
+  #histBody blockquote {
+    margin: 4px 0; padding: 2px 10px; border-left: 3px solid var(--accent);
+    background: rgba(79,140,255,0.08); color: var(--text); white-space: pre-wrap;
+  }
+  #histBody code {
+    background: rgba(0,0,0,0.4); color: #cde3ff;
+    padding: 1px 5px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 11.5px; }
+  #histBody strong { color: #fff; }
+
+  /* ---------- 选项按钮（A/B/C 决策） ---------- */
+  .optrow { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .optbtn {
+    text-align: left; padding: 7px 10px;
+    background: var(--bg-light); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; cursor: pointer; font-size: 12.5px;
+    user-select: none;
+  }
+  .optbtn:hover { border-color: var(--accent); background: rgba(79,140,255,0.15); }
+  .optbtn.optdone { opacity: 0.4; cursor: default; }
+  .optbtn.optdone:hover { border-color: rgba(255,255,255,0.12); background: var(--bg-light); }
+
+  /* ---------- HTML 图示渲染 ---------- */
+  .htmlfig { position: relative; margin: 8px 0 14px; }
+  .htmlframe {
+    width: 100%; min-height: 80px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; background: #fff;
+    display: block;
+  }
+  .figbtns { display: flex; gap: 6px; margin-top: 4px; }
+  .figbtns .copybtn { position: static; }
+  .srcview {
+    margin: 6px 0 0; padding: 8px;
+    background: rgba(0,0,0,0.35); color: #cde3ff;
+    border-radius: 8px; font-size: 11px; font-family: Consolas, monospace;
+    max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    user-select: text;
+  }
+  .msg { max-width: 88%; margin-bottom: 10px; padding: 8px 10px;
+    border-radius: 10px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .msg.md { white-space: normal; }
+  /* ---------- Markdown 渲染样式 ---------- */
+  .msg.md h1, .msg.md h2, .msg.md h3, .msg.md h4 {
+    margin: 8px 0 4px; line-height: 1.35; color: var(--text); }
+  .msg.md h1 { font-size: 15px; border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 3px; }
+  .msg.md h2 { font-size: 14px; }
+  .msg.md h3 { font-size: 13.5px; }
+  .msg.md h4 { font-size: 13px; }
+  .msg.md p { margin: 4px 0; }
+  .msg.md ul, .msg.md ol { margin: 4px 0; padding-left: 20px; }
+  .msg.md li { margin: 2px 0; }
+  .msg.md code {
+    background: rgba(0,0,0,0.4); color: #cde3ff;
+    padding: 1px 5px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 12px; }
+  .msg.md pre {
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 8px; overflow-x: auto; margin: 6px 0; }
+  .msg.md pre code { background: transparent; padding: 0; color: #cde3ff; font-size: 11.5px; }
+  .msg.md blockquote {
+    margin: 4px 0; padding: 2px 10px; border-left: 3px solid var(--accent);
+    background: rgba(79,140,255,0.08); color: var(--text-dim); }
+  .msg.md table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+  .msg.md th, .msg.md td { border: 1px solid rgba(255,255,255,0.18); padding: 3px 8px; }
+  .msg.md th { background: rgba(255,255,255,0.06); }
+  .msg.md strong { color: #fff; }
+  .msg.md a { color: #7fb0ff; }
+  .msg.md hr { border: none; border-top: 1px solid rgba(255,255,255,0.12); margin: 8px 0; }
+  .msg.user { background: var(--accent); color: #fff; margin-left: auto; }
+  .msg.ai { background: var(--bg-light); color: var(--text); }
+
+  #inputbar { flex: none; padding: 10px; border-top: 1px solid rgba(255,255,255,0.06); }
+  #inputbar textarea {
+    width: 100%; height: 52px; resize: none;
+    background: var(--bg-light); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+    padding: 8px; font-size: 13px; outline: none; user-select: text;
+  }
+  #btnrow { display: flex; gap: 8px; margin-top: 8px; }
+  #btnrow button {
+    flex: 1; padding: 8px 0; border: none; border-radius: 8px;
+    background: var(--accent); color: #fff; font-size: 13px; cursor: pointer;
+  }
+  #btnrow button.secondary { background: var(--bg-light); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.12); }
+  #btnrow button:hover { filter: brightness(1.15); }
+
+  /* ---------- 小球 ---------- */
+  #ball {
+    display: none;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #6ea8ff, #2b6be0);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    cursor: pointer;
+    align-items: center; justify-content: center;
+    color: #fff; font-size: 20px; font-weight: bold;
+    border: 2px solid rgba(255,255,255,0.35);
+  }
+  body.mode-ball #panel { display: none; }
+  body.mode-ball #ball { display: flex; }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <div id="titlebar">
+      <div class="dot t" id="btnHide" title="隐藏到托盘"></div>
+      <div class="dot b" id="btnBall" title="收起成小球"></div>
+      <div id="title">Code Tutor · <span id="taskName">…</span></div>
+      <!-- 右侧功能条：最小化 / 收起小球 / 关闭 -->
+      <div id="winbtns">
+        <button class="wb" id="wbNew" title="多开：新建一个任务窗口">&#xFF0B;</button>
+        <button class="wb" id="wbMin" title="最小化（隐藏到托盘）">&#x2500;</button>
+        <button class="wb" id="wbBall" title="收起成小球">&#x26EC;</button>
+        <button class="wb wb-close" id="wbClose" title="关闭（退出程序）">&#x2715;</button>
+      </div>
+    </div>
+    <div id="messages"></div>
+    <div id="inputbar">
+      <textarea id="input" placeholder="告诉助教：我要写什么文件…（如：IIC 定义文件）"></textarea>
+      <div id="btnrow">
+        <button id="btnSend">发送</button>
+        <button id="btnCheck" class="secondary">检验代码</button>
+        <button id="btnCode" class="secondary">给我代码</button>
+        <button id="btnHistory" class="secondary" title="查看之前保存到记忆库的对话">历史</button>
+      </div>
+    </div>
+  </div>
+  <div id="historyLayer">
+    <div id="historyPanel">
+      <div id="historyHead">
+        <span>记忆库 · 对话记录</span>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button id="histResume" class="copybtn" style="position:static; color:#9fc2ff; border-color:#4f8cff;" title="把这一天（或最新一天）的对话载入当前会话，接着聊">从此继续</button>
+          <button id="histClose" class="copybtn" style="position:static">关闭</button>
+        </div>
+      </div>
+      <div id="histFiles"></div>
+      <div id="histTasks" style="flex:none; display:flex; gap:6px; align-items:center; padding:6px 10px; background:rgba(0,0,0,0.18); border-bottom:1px solid rgba(255,255,255,0.08); overflow-x:auto;">
+        <span style="flex:none; font-size:11px; color:var(--text-dim);">任务:</span>
+      </div>
+      <div id="histResumeBar" style="display:none; flex:none; padding:6px 10px; background:rgba(79,140,255,0.12); color:var(--text); font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1);">
+        载入到哪一轮？
+        <div id="histResumeList" style="margin-top:6px; max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"></div>
+      </div>
+      <div id="histBody" class="md"></div>
+    </div>
+  </div>
+  <div id="ball" title="点击展开">AI</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const messages = $('messages');
+
+  // 解析 [OPTIONS] 块：返回 { body, options: [{key, label}] }
+  function parseOptions(text) {
+    const m = text.match(/\n?\[OPTIONS\]\s*\n((?:[A-D]=.+\n?)+)\s*$/);
+    if (!m) return { body: text, options: null };
+    const options = m[1].trim().split('\n').map((line) => {
+      const i = line.indexOf('=');
+      return i > 0 ? { key: line.slice(0, i).trim(), label: line.slice(i + 1).trim() } : null;
+    }).filter(Boolean);
+    if (options.length === 0) return { body: text, options: null };
+    return { body: text.slice(0, m.index).trimEnd(), options };
+  }
+
+  // 拆分 ```html 代码块：返回 [{type:'text',text}|{type:'html',code}]
+  function parseHtmlBlocks(text) {
+    const parts = [];
+    const re = /```html\s*\n([\s\S]*?)```/g;
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) parts.push({ type: 'text', text: text.slice(last, m.index) });
+      parts.push({ type: 'html', code: m[1] });
+      last = re.lastIndex;
+    }
+    if (last < text.length) parts.push({ type: 'text', text: text.slice(last) });
+    return parts;
+  }
+
+  // 让一组选项按钮失效（已选过）
+  function disableOptions(wrap) {
+    wrap.querySelectorAll('.optbtn').forEach((b) => { b.disabled = true; b.classList.add('optdone'); });
+  }
+
+  // 轻量 Markdown → HTML（先整体转义再解析，无注入风险）
+  function renderMd(src) {
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // 1. 抽出代码块（```lang ... ```），占位防被行内规则破坏
+    const blocks = [];
+    src = src.replace(/```(\w*)\s*\n([\s\S]*?)```/g, (_, lang, code) => {
+      blocks.push('<pre><code>' + esc(code.replace(/\n$/, '')) + '</code></pre>');
+      return '\u0000B' + (blocks.length - 1) + '\u0000';
+    });
+    // 2. 逐行解析：标题 / 分隔线 / 列表 / 引用 / 表格 / 段落
+    const lines = esc(src).split('\n');
+    const out = [];
+    let list = null;        // 'ul' | 'ol' | 'quote' | null
+    let table = null;       // 收集表格行
+    const closeList = () => {
+      if (!list) return;
+      out.push(list === 'quote' ? '</blockquote>' : '</' + list + '>');
+      list = null;
+    };
+    const flushTable = () => {
+      if (!table) return;
+      const rows = table.filter((r) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(r));
+      let html = '<table>';
+      rows.forEach((r, i) => {
+        const cells = r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+        html += '<tr>' + cells.map((c) => (i === 0 ? '<th>' + inline(c) + '</th>' : '<td>' + inline(c) + '</td>')).join('') + '</tr>';
+      });
+      out.push(html + '</table>');
+      table = null;
+    };
+    // 3. 行内：加粗 / 斜体 / 行内代码 / 链接
+    const inline = (s) => s
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      const hm = line.match(/^(#{1,4})\s+(.*)/);
+      const tm = line.match(/^\s*\|.*\|\s*$/);
+      if (tm) { closeList(); if (!table) table = []; table.push(line); continue; }
+      if (table) flushTable();
+      if (hm) { closeList(); out.push('<h' + hm[1].length + '>' + inline(hm[2]) + '</h' + hm[1].length + '>'); continue; }
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { closeList(); out.push('<hr>'); continue; }
+      const qm = line.match(/^\s*&gt;\s?(.*)/);
+      if (qm) {
+        if (list !== 'quote') { closeList(); out.push('<blockquote>'); list = 'quote'; }
+        out.push('<p>' + inline(qm[1]) + '</p>'); continue;
+      }
+      const um = line.match(/^\s*[-*+]\s+(.*)/);
+      const om = line.match(/^\s*\d+[.、]\s+(.*)/);
+      if (um || om) {
+        const want = um ? 'ul' : 'ol';
+        if (list !== want) { closeList(); out.push('<' + want + '>'); list = want; }
+        out.push('<li>' + inline((um || om)[1]) + '</li>'); continue;
+      }
+      if (line.trim() === '') { closeList(); continue; }
+      closeList();
+      out.push('<p>' + inline(line) + '</p>');
+    }
+    if (table) flushTable();
+    closeList();
+    // 4. 回填代码块
+    return out.join('\n').replace(/\u0000B(\d+)\u0000/g, (_, i) => blocks[+i]);
+  }
+
+  function addMsg(text, who, onOptions, opts) {
+    const wrap = document.createElement('div');
+    wrap.className = 'msgwrap ' + who;
+    // 每轮对话自动追加到 Obsidian 记忆库（失败静默，不影响聊天）
+    // skipSave: 欢迎语/系统提示/跳转横幅等元信息不写入
+    if (!opts?.skipSave && (who === 'user' || who === 'ai')) {
+      try { window.ct.memSave && window.ct.memSave(text, who); } catch {}
+    }
+    const parsed = who === 'ai' ? parseOptions(text) : { body: text, options: null };
+    // 文本段（可能多段，html 块之间夹着说明文字）
+    let fullText = '';
+    if (who === 'ai') {
+      for (const part of parseHtmlBlocks(parsed.body)) {
+        if (part.type === 'text') {
+          if (part.text.trim().length === 0) continue;
+          const seg = document.createElement('div');
+          seg.className = 'msg ' + who + ' md';
+          seg.innerHTML = renderMd(part.text);   // renderMd 内部已先转义，安全
+          wrap.appendChild(seg);
+          fullText += part.text;
+        } else {
+          // HTML 图示：沙箱 iframe 渲染
+          const fig = document.createElement('div');
+          fig.className = 'htmlfig';
+          const frame = document.createElement('iframe');
+          frame.sandbox = 'allow-same-origin';
+          frame.className = 'htmlframe';
+          frame.srcdoc = part.code;
+          frame.onload = () => {
+            // 按内容自适应高度
+            try {
+              const h = frame.contentDocument.body.scrollHeight;
+              const w = frame.contentDocument.body.scrollWidth;
+              frame.style.height = Math.min(Math.max(h, 60), 420) + 'px';
+            } catch { frame.style.height = '200px'; }
+          };
+          fig.appendChild(frame);
+          const figbtns = document.createElement('div');
+          figbtns.className = 'figbtns';
+          const srcBtn = document.createElement('button');
+          srcBtn.className = 'copybtn';
+          srcBtn.textContent = '查看源码';
+          srcBtn.onclick = () => {
+            if (srcBtn.textContent === '查看源码') {
+              if (!fig.querySelector('.srcview')) {
+                const sv = document.createElement('pre');
+                sv.className = 'srcview';
+                sv.textContent = part.code;
+                fig.appendChild(sv);
+              }
+              fig.querySelector('.srcview').style.display = 'block';
+              srcBtn.textContent = '隐藏源码';
+            } else {
+              fig.querySelector('.srcview').style.display = 'none';
+              srcBtn.textContent = '查看源码';
+            }
+          };
+          const cpBtn = document.createElement('button');
+          cpBtn.className = 'copybtn';
+          cpBtn.textContent = '复制图源码';
+          cpBtn.onclick = () => {
+            navigator.clipboard.writeText(part.code).then(() => {
+              cpBtn.textContent = '已复制';
+              setTimeout(() => { cpBtn.textContent = '复制图源码'; }, 1200);
+            });
+          };
+          figbtns.appendChild(srcBtn);
+          figbtns.appendChild(cpBtn);
+          fig.appendChild(figbtns);
+          wrap.appendChild(fig);
+        }
+      }
+    } else {
+      const div = document.createElement('div');
+      div.className = 'msg ' + who;
+      div.textContent = parsed.body;
+      wrap.appendChild(div);
+    }    // 选项按钮（像 Harness 的 A/B/C 选择）
+    if (parsed.options && onOptions) {
+      const optrow = document.createElement('div');
+      optrow.className = 'optrow';
+      for (const opt of parsed.options) {
+        const btn = document.createElement('button');
+        btn.className = 'optbtn';
+        btn.textContent = opt.key + '. ' + opt.label;
+        btn.onclick = () => {
+          disableOptions(wrap);
+          onOptions(opt.key, opt.label);
+        };
+        optrow.appendChild(btn);
+      }
+      wrap.appendChild(optrow);
+    }
+    // AI 消息带复制按钮（点按钮复制全文，不用手动划选）
+    if (who === 'ai') {
+      const btn = document.createElement('button');
+      btn.className = 'copybtn';
+      btn.textContent = '复制';
+      btn.title = '复制这条回答全文';
+      btn.onclick = () => {
+        navigator.clipboard.writeText(fullText || parsed.body).then(() => {
+          btn.textContent = '已复制';
+          setTimeout(() => { btn.textContent = '复制'; }, 1200);
+        });
+      };
+      wrap.appendChild(btn);
+    }
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return { wrap, div: wrap.querySelector('.msg') };
+  }
+
+  // 欢迎语（skipSave: 欢迎语/系统提示类不写入记忆库）
+  addMsg('你好！我是独立悬浮代码助教（不随 DSH 最小化消失）。\n当前版本 v0.9：对话/检验/给码/选项交互/多任务多开/历史续聊已接入。\n对我说：\n· "我要写 iic" → 我给你函数清单（不给代码）\n· 需要决策时我会给出 A/B/C 选项按钮\n· 写完点【检验代码】→ 我查你的 iic.c\n· 卡住点【给我代码】→ 给当前函数实现+讲解', 'ai', null, { skipSave: true });
+
+  // ---------- LLM 对话 ----------
+  const history = []; // {text, who}
+
+  let lastOptionWrap = null; // 最近一条带选项的回答，选择后失效它的按钮
+  let chatting = false;
+  async function ask(text, displayText) {
+    if (chatting) { addMsg('（上一条还在回答中，稍等…）', 'ai', null, { skipSave: true }); return; }
+    chatting = true;
+    if (lastOptionWrap) { disableOptions(lastOptionWrap); lastOptionWrap = null; }
+    if (displayText !== undefined) addMsg(displayText, 'user');
+    const thinking = addMsg('思考中…', 'ai');
+    try {
+      const answer = await window.ct.chat(text, history.slice(-8));
+      thinking.div.textContent = '思考中…';
+      thinking.div.remove(); // 用正式回答替换占位
+      const result = addMsg(answer, 'ai', (key, label) => {
+        // 用户点了选项：把选择作为新输入发出
+        ask('我选择 ' + key + '（' + label + '）', '我选择：' + key + '. ' + label);
+      });
+      if (result.wrap.querySelector('.optbtn')) lastOptionWrap = result.wrap;
+      history.push({ text, who: 'user' }, { text: answer, who: 'ai' });
+    } catch (err) {
+      thinking.div.textContent = '出错了：' + err.message + '\n（请确认 DSH 正在运行且已重启加载最新桥接插件）';
+    } finally {
+      messages.scrollTop = messages.scrollHeight;
+      chatting = false;
+    }
+  }
+
+  $('btnSend').onclick = () => {
+    const v = $('input').value.trim();
+    if (!v) return;
+    $('input').value = '';
+    ask(v, v);
+  };
+
+  // 【检验代码】：真读文件 + 真编译 + LLM 综合判定（行动型 agent 的核心流程）
+  $('btnCheck').onclick = async () => {
+    if (chatting) { addMsg('（上一条还在处理中…）', 'ai', null, { skipSave: true }); return; }
+    chatting = true;
+    addMsg('【检验代码】', 'user');
+    const thinking = addMsg('检验中：正在读取你的代码…', 'ai');
+    try {
+      // 1. 真实读取用户代码
+      let iicC = '', iicH = '';
+      try { iicC = await window.ct.readFile('D:\\stm32\\c8t6\\driver\\iic.c'); }
+      catch (e) { iicC = '(读取失败: ' + e.message + ')'; }
+      try { iicH = await window.ct.readFile('D:\\stm32\\c8t6\\driver\\iic.h'); }
+      catch (e) { iicH = '(读取失败: ' + e.message + ')'; }
+      // 2. 真实编译（UV4 命令行）
+      thinking.div.textContent = '检验中：正在编译（UV4 -b）…';
+      let buildResult = '';
+      try {
+        const r = await window.ct.build();
+        buildResult = 'UV4 退出码: ' + r.exitCode + '\n--- build.log ---\n' + r.log;
+      } catch (e) {
+        buildResult = '(编译调用失败: ' + e.message + ')';
+      }
+      // 3. LLM 综合判定
+      thinking.div.textContent = '检验中：AI 正在分析…';
+      const prompt = '请检验我的代码。下面是【真实文件内容】和【真实编译输出】。\n'
+        + '=== driver/iic.h ===\n' + iicH + '\n'
+        + '=== driver/iic.c ===\n' + iicC + '\n'
+        + '=== 编译结果 ===\n' + buildResult + '\n'
+        + '请给出：1) 结论：编译是否通过（以编译输出为准，0 Error = 通过）；2) 准确度百分比（相对我们规划的函数清单，已实现/语法正确/逻辑合理的程度）；3) 问题清单（如有 Error/Warning 逐条解释原因和修法）；4) 可优化点（只列出，不主动改）。若我自定义了函数名请同步到规划。';
+      const answer = await window.ct.chat(prompt, history.slice(-6));
+      thinking.div.remove();
+      addMsg(answer, 'ai', (key, label) => {
+        ask('我选择 ' + key + '（' + label + '）', '我选择：' + key + '. ' + label);
+      });
+      history.push({ text: '【检验代码】', who: 'user' }, { text: answer, who: 'ai' });
+    } catch (err) {
+      thinking.div.textContent = '检验失败：' + err.message;
+    } finally {
+      messages.scrollTop = messages.scrollHeight;
+      chatting = false;
+    }
+  };
+
+  $('btnCode').onclick  = () => ask('请给出规划中下一个尚未实现函数的完整代码，并逐段讲解。', '【给我代码】');
+
+  $('btnHide').onclick = () => window.ct.hide();
+  $('btnBall').onclick = () => window.ct.collapse();
+  $('ball').onclick = () => window.ct.expand();
+
+  // 窗口功能条
+  $('wbMin').onclick   = () => window.ct.hide();      // 最小化到托盘
+  $('wbBall').onclick  = () => window.ct.collapse();  // 收起小球
+  $('wbClose').onclick = () => window.ct.quit();      // 真正退出程序
+
+  // 多开：输入任务名，拉起对应任务的新窗口
+  $('wbNew').onclick = () => {
+    const name = prompt('新任务名（如 gpio / delay / spi）：', '');
+    if (name === null) return;
+    const task = name.trim();
+    if (!task) return;
+    if (task === window.ct.task) { alert('本窗口就是这个任务，换一个名字。'); return; }
+    fetch('http://127.0.0.1:' + window.ct.port + '/launch', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ task }),
+    }).then((r) => r.json()).then((j) => {
+      if (j.ok) addMsg(j.already ? '任务「' + j.task + '」的窗口已经在运行，已帮你聚焦（若没看到看任务栏/托盘）。' : '已启动任务「' + j.task + '」窗口（端口 ' + j.port + '）。', 'ai');
+      else addMsg('启动失败：' + (j.error || '未知错误'), 'ai');
+    }).catch((e) => addMsg('启动失败：' + e.message, 'ai'));
+  };
+
+  // 小球拖动（标题栏已改用系统级 -webkit-app-region: drag，OS 直接处理，与缩放热区不冲突）
+  function makeDraggable(el) {
+    let dragging = false, lx = 0, ly = 0;
+    el.addEventListener('mousedown', e => {
+      if (e.target.id === 'btnHide' || e.target.id === 'btnBall') return;
+      dragging = true; lx = e.screenX; ly = e.screenY;
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.screenX - lx, dy = e.screenY - ly;
+      if (dx === 0 && dy === 0) return;
+      window.ct.drag(dx, dy);
+      lx = e.screenX; ly = e.screenY;
+    });
+    window.addEventListener('mouseup', () => dragging = false);
+    window.addEventListener('blur', () => dragging = false);
+  }
+  makeDraggable($('ball'));
+
+  // 模式同步
+  window.ct.getMode().then(m => document.body.className = m === 'ball' ? 'mode-ball' : '');
+  window.ct.onMode(m => document.body.className = m === 'ball' ? 'mode-ball' : '');
+
+  // 接收外部推送（DSH 插件可通过 /push 接口推送消息）
+  window.ct.onPush((text, who) => {
+    addMsg(text, who === 'user' ? 'user' : 'ai');
+  });
+
+  // Enter 发送 / Shift+Enter 换行
+  $('input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('btnSend').click(); }
+  });
+
+  // ---------- 历史查看层（Obsidian 记忆库 · 跨任务） ----------
+  const histLayer = $('historyLayer');
+  let histCurrentName = null;   // 当前打开的日期文件
+  let histRounds = [];          // 解析出的轮次 [{who, text}]
+  let histTask = null;          // 当前查看的任务（= 本窗口任务则为 null，续聊只在同任务下允许）
+
+  /** 渲染任务切换行 */
+  async function renderTaskRow() {
+    const row = $('histTasks');
+    row.querySelectorAll('.histFile').forEach((x) => x.remove());
+    let tasks = [], current = 'default';
+    try { ({ tasks, current } = await window.ct.tasks()); } catch {}
+    if (!tasks.includes(current)) tasks.unshift(current);
+    for (const t of tasks) {
+      const b = document.createElement('button');
+      b.className = 'histFile' + (t === histTask ? ' active' : '');
+      b.textContent = t;
+      b.onclick = () => { histTask = t; renderTaskRow(); loadDayList(); };
+      row.appendChild(b);
+    }
+  }
+
+  /** 载入当前选中任务的日期列表 */
+  async function loadDayList() {
+    let files = [];
+    try { ({ files } = await window.ct.memList(histTask || undefined)); } catch {}
+    const box = $('histFiles');
+    box.innerHTML = '';
+    $('histBody').innerHTML = files.length === 0 ? '<p>（该任务还没有记录。对话会自动保存到它的子库。）</p>' : '<p>加载中…</p>';
+    if (files.length === 0) return;
+    files.forEach((name) => {
+      const b = document.createElement('button');
+      b.className = 'histFile';
+      b.textContent = name.replace('.md', '');
+      b.onclick = async () => {
+        box.querySelectorAll('.histFile').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        histCurrentName = name;
+        try {
+          const md = await window.ct.memRead(name, histTask || undefined);
+          histRounds = parseMemMd(md);
+          $('histBody').innerHTML = renderMd(md);  // renderMd 内部已先转义，安全
+        } catch (e) { $('histBody').innerHTML = '<p>读取失败: ' + e.message + '</p>'; }
+      };
+      box.appendChild(b);
+    });
+    box.firstChild.click(); // 默认打开最新一天
+  }
+
+  $('btnHistory').onclick = async () => {
+    histLayer.classList.add('open');
+    $('histResumeBar').style.display = 'none';
+    histTask = null; // 默认本任务
+    await renderTaskRow();
+    await loadDayList();
+  };
+
+  /** 把记忆库 md 解析回轮次数组（### HH:MM · 我/Code Tutor 分节） */
+  function parseMemMd(md) {
+    const rounds = [];
+    const re = /^### (\d{2}:\d{2}) · (我|Code Tutor)\s*$/gm;
+    let m, positions = [];
+    while ((m = re.exec(md)) !== null) positions.push({ at: m.index, time: m[1], who: m[2] === '我' ? 'user' : 'ai' });
+    for (let i = 0; i < positions.length; i++) {
+      const start = md.indexOf('\n', positions[i].at) + 1;
+      const end = i + 1 < positions.length ? positions[i + 1].at : md.length;
+      // 去掉引用前缀（ai 消息存储时逐行加了引用；LLM 输出里可能有嵌套引用，循环剥到没有为止）
+      const text = md.slice(start, end).trim().split('\n')
+        .map((l) => {
+          let out = l;
+          while (out === '>' || out.startsWith('&gt; ') || out.startsWith('> ')) {
+            out = out === '>' ? '' : out.replace(/^&gt; /, '').replace(/^> /, '');
+          }
+          return out;
+        })
+        .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      if (text) rounds.push({ time: positions[i].time, who: positions[i].who, text });
+    }
+    return rounds;
+  }
+
+  $('histClose').onclick = () => { histLayer.classList.remove('open'); $('histResumeBar').style.display = 'none'; };
+  histLayer.addEventListener('click', (e) => { if (e.target === histLayer) { histLayer.classList.remove('open'); $('histResumeBar').style.display = 'none'; } });
+
+  // ---------- 从此继续：把历史轮次载入当前会话 ----------
+  $('histResume').onclick = () => {
+    if (!histRounds.length) { alert('这一天没有可载入的对话'); return; }
+    const bar = $('histResumeBar');
+    const list = $('histResumeList');
+    list.innerHTML = '';
+    bar.style.display = 'block';
+    // 每个轮次一个候选点；默认勾选最后一条
+    histRounds.forEach((r, i) => {
+      const label = document.createElement('label');
+      label.className = 'histFile';
+      label.style.display = 'block';
+      label.style.whiteSpace = 'nowrap'; label.style.overflow = 'hidden'; label.style.textOverflow = 'ellipsis';
+      const preview = (r.who === 'user' ? r.text : r.text.replace(/\n/g, ' ')).slice(0, 40);
+      label.innerHTML = '<input type="radio" name="histround" value="' + i + '"' + (i === histRounds.length - 1 ? ' checked' : '') + '> '
+        + r.time + ' ' + (r.who === 'user' ? '【我】' : '【Tutor】') + preview.replace(/</g, '&lt;');
+      list.appendChild(label);
+    });
+  };
+
+  // 点"从此继续"列表里的确认按钮（动态生成在列表底部）
+  (function () {
+    const bar = $('histResumeBar');
+    const confirm = document.createElement('button');
+    confirm.className = 'copybtn'; confirm.style.position = 'static'; confirm.style.marginTop = '6px';
+    confirm.textContent = '✓ 载入并继续';
+    confirm.onclick = () => {
+      const sel = document.querySelector('input[name="histround"]:checked');
+      if (!sel) return;
+      const upto = +sel.value;
+      const picked = histRounds.slice(0, upto + 1);
+      if (histTask && histTask !== window.ct.task) {
+        // 跨任务：拉起/聚焦目标任务窗口，并把选中的对话预载给它
+        window.ct.launch(histTask, picked).then((j) => {
+          if (j && j.ok) {
+            addMsg('—— 正在打开任务「' + histTask + '」' + (j.already ? '（窗口已在运行，将聚焦并载入）' : '') + '，载入 ' + picked.length + ' 轮对话 ——', 'ai', null, { skipSave: true });
+            histLayer.classList.remove('open');
+            $('histResumeBar').style.display = 'none';
+          } else {
+            alert('打开任务窗口失败：' + (j && j.error ? j.error : '未知错误'));
+          }
+        }).catch((e) => alert('打开任务窗口失败：' + e.message));
+        return;
+      }
+      // 本任务：直接载入
+      // 1. 恢复 LLM 上下文
+      history.length = 0;
+      for (const r of picked) history.push({ text: r.text, who: r.who });
+      // 2. 重放到当前对话区
+      messages.innerHTML = '';
+      addMsg('—— 已从记忆库「' + (histCurrentName || '').replace('.md', '') + '」载入 ' + picked.length + ' 轮对话，接着聊 ——', 'ai', null, { skipSave: true });
+      for (const r of picked) addMsg(r.text, r.who);
+      histLayer.classList.remove('open');
+      $('histResumeBar').style.display = 'none';
+      messages.scrollTop = messages.scrollHeight;
+    };
+    bar.appendChild(confirm);
+  })();
+
+  // 任务名显示
+  $('taskName').textContent = window.ct.task || 'default';
+
+  // ---------- 跨任务跳转的预载上下文 ----------
+  // 启动时取一次；若窗口已在运行（跳转聚焦场景），再短暂轮询几次兜底
+  let resumeApplied = false;
+  async function tryApplyResume() {
+    if (resumeApplied) return true;
+    const resume = await window.ct.resumeTake();
+    if (!resume || !Array.isArray(resume.rounds) || resume.rounds.length === 0) return false;
+    resumeApplied = true;
+    history.length = 0;
+    for (const r of resume.rounds) history.push({ text: r.text, who: r.who });
+    messages.innerHTML = '';
+    addMsg('—— 从「' + (window.ct.task || 'default') + '」记忆库跳转载入 ' + resume.rounds.length + ' 轮对话，接着聊 ——', 'ai', null, { skipSave: true });
+    for (const r of resume.rounds) addMsg(r.text, r.who);
+    messages.scrollTop = messages.scrollHeight;
+    return true;
+  }
+  tryApplyResume().then((ok) => { if (!ok) { let n = 0; const t = setInterval(async () => { if (await tryApplyResume() || ++n >= 10) clearInterval(t); }, 2000); } });
+</script>
+</body>
+</html>

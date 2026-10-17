@@ -1,0 +1,8 @@
+- insert:
+    - id: code-tutor-bridge
+      name: '@local/code-tutor-bridge'
+      config:
+        controlPort: 19290
+        appDir: 'D:\办公任务\code-tutor'
+        provider: workbuddy
+        model: deepseek-v4.1-flash

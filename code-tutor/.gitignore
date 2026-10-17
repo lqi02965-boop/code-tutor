@@ -1,0 +1,29 @@
+# ================= 运行时/大二进制（不入库，自行获取）=================
+# Electron 运行时（体积过大，从 https://github.com/electron/electron/releases 下载）
+*.dll
+*.pak
+*.exe
+*.bin
+*.dat
+*.asar
+resources.pak
+v8_context_*
+snapshot_blob*
+icudtl.dat
+LICENSES.chromium.html
+
+# ================= 私有凭据（严禁提交）=================
+*.local.*
+*.secret.*
+.env
+.env.*
+
+# ================= 本机私有配置/调试产物 =================
+launch-debug.log
+build.log
+*.log
+
+# ================= 系统垃圾 =================
+Thumbs.db
+Desktop.ini
+node_modules/

@@ -1,0 +1,23 @@
+{
+  "name": "@local/code-tutor-bridge",
+  "version": "0.3.3",
+  "private": true,
+  "type": "module",
+  "meta": {
+    "title": "Code Tutor Bridge",
+    "description": "Composer CT button, floating-window push/chat routes, and tutor tools"
+  },
+  "exports": { ".": "./index.js", "./client": "./client.js" },
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.1"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}
