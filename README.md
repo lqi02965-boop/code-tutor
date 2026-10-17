@@ -4,7 +4,12 @@
 
 > 定位：**行动型 agent**——不只是"能说"，还能"读你的代码、跑编译、拿真实输出说话"。
 
-![screenshot](docs/screenshot-placeholder.png)
+<p align="center">
+  <img src="docs/hw-profile.png" width="200" alt="硬件档案" title="硬件档案：填写芯片/外设/引脚">
+  <img src="docs/history-browse.png" width="200" alt="记忆库浏览" title="记忆库：按任务/日期浏览对话">
+  <img src="docs/history-resume.png" width="200" alt="从此继续" title="选中任意一轮载入上下文续聊">
+</p>
+<p align="center"><sub>硬件档案 · 记忆库浏览 · 选中轮次从此继续</sub></p>
 
 ---
 
@@ -305,7 +310,7 @@ cd dsh-code-tutor-bridge
 
 ## 🗺️ Roadmap
 
-- [x] 硬件档案设置页（表格化填写芯片/外设/引脚，自动注入 prompt）— **v1.2 已实现**
+- [x] 硬件档案设置页（表格化填写芯片/外设/引脚，自动注入 prompt）— **v1.2 已实现**（见顶部截图）
 - [ ] 常见板卡硬件预设库 + 官方文档搜索
 - [ ] 存储层可选 SQLite（见「记忆库与 Obsidian」）
 - [ ] 悬浮窗内接任意 OpenAI 兼容 API 的设置界面
@@ -327,6 +332,7 @@ cd dsh-code-tutor-bridge
 | v1.0 | 自动任务分类（对话自动归入对应任务子库）、元信息不入库 |
 | v1.1 | 选项交互升级：A/B/C/D 之外可自定义输入自己的方案 |
 | v1.2 | 硬件档案：⚙ 表单填写 MCU/外设/引脚，JSON 导入导出，自动注入每次提问 |
+| v1.2.1 | 修复跨任务跳转假阳性卡死；跳转后窗口自动弹出 |
 
 ---
 
