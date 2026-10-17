@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$repo = 'https://github.com/<user>/code-tutor'   # ← 发布时替换为真实仓库地址
+$repo = 'https://github.com/lqi02965-boop/code-tutor'   # ← 发布时替换为真实仓库地址
 $branch = 'main'
 $installRoot = Join-Path $env:USERPROFILE 'code-tutor'
 

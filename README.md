@@ -66,7 +66,7 @@ dsh-code-tutor-bridge/      DSH 桥接插件（可选，增强功能）
 装好 [git](https://git-scm.com) 和 [Node.js](https://nodejs.org) 后，在 PowerShell 里执行一条命令（发布后把 `<user>` 换成真实仓库地址）：
 
 ```powershell
-irm https://raw.githubusercontent.com/<user>/code-tutor/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/lqi02965-boop/code-tutor/main/install.ps1 | iex
 ```
 
 脚本会自动完成：
@@ -84,7 +84,7 @@ irm https://raw.githubusercontent.com/<user>/code-tutor/main/install.ps1 | iex
 #### 1. 获取源码
 
 ```powershell
-git clone https://github.com/<user>/code-tutor ~/code-tutor/code-tutor-src
+git clone https://github.com/lqi02965-boop/code-tutor ~/code-tutor/code-tutor-src
 ```
 
 #### 2. 安装 DSH 桥接插件（可选，推荐）
