@@ -1,11 +1,24 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// 端口与任务名来自主进程启动参数（--port= / --task=），preload 与主进程共享 argv
-const hit = process.argv.find((a) => a.startsWith('--port='));
-const PORT = hit ? Number(hit.split('=')[1]) : 19290;
-const BASE = 'http://127.0.0.1:' + PORT;
-const TASK_ARG = process.argv.find((a) => a.startsWith('--task='));
-const TASK = TASK_ARG ? TASK_ARG.split('=').slice(1).join('=') : 'default';
+/* 端口与任务名：preload 在 sandbox 模式下 process.argv 不含自定义参数，
+ * 必须经 IPC 从主进程拿（ct:config）；argv 解析只作兜底。 */
+let PORT = 19290;
+let TASK = 'default';
+let BASE = 'http://127.0.0.1:' + PORT;
+
+try {
+  const hit = process.argv.find((a) => a && a.startsWith && a.startsWith('--port='));
+  if (hit) PORT = Number(hit.split('=')[1]);
+  const t = process.argv.find((a) => a && a.startsWith && a.startsWith('--task='));
+  if (t) TASK = t.split('=').slice(1).join('=');
+  BASE = 'http://127.0.0.1:' + PORT;
+} catch { /* sandboxed argv */ }
+
+/* IPC 修正（主进程是唯一可信来源） */
+ipcRenderer.invoke('ct:config').then((cfg) => {
+  if (cfg && cfg.port) { PORT = cfg.port; BASE = 'http://127.0.0.1:' + PORT; }
+  if (cfg && cfg.task) TASK = cfg.task;
+}).catch(() => {});
 
 contextBridge.exposeInMainWorld('ct', {
   getMode: () => ipcRenderer.invoke('ct:getMode'),
@@ -14,8 +27,8 @@ contextBridge.exposeInMainWorld('ct', {
   hide: () => ipcRenderer.send('ct:hide'),
   quit: () => ipcRenderer.send('ct:quit'),
   drag: (dx, dy) => ipcRenderer.send('ct:drag', dx, dy),
-  task: TASK,
-  port: PORT,
+  get task() { return TASK; },           // getter：IPC 异步修正后渲染层读到的也是新值
+  get port() { return PORT; },
   // Chat: renderer -> local control server (per-task port) -> DSH bridge (19387) -> ctx.llm
   chat: (text, history) => fetch(BASE + '/chat', {
     method: 'POST',

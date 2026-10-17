@@ -1025,6 +1025,9 @@
   // ---------- 跨任务跳转的预载上下文 ----------
   // 启动时取一次；若窗口已在运行（跳转聚焦场景），再短暂轮询几次兜底
   let resumeApplied = false;
+  async function applyResume(resume) {
+    return applyResume(resume);
+  }
   async function tryApplyResume() {
     if (resumeApplied) return true;
     const resume = await window.ct.resumeTake();
@@ -1038,7 +1041,10 @@
     messages.scrollTop = messages.scrollHeight;
     return true;
   }
-  tryApplyResume().then((ok) => { if (!ok) { let n = 0; const t = setInterval(async () => { if (await tryApplyResume() || ++n >= 10) clearInterval(t); }, 2000); } });
+    // 持续低频轮询：跨任务跳转/外部推 resume 时，无论窗口跑了多久都能收到（launchTask 写文件后不主动 IPC 通知）
+    // 轮询兜底：首启失败/异常都要持续重试（跳转可能发生在窗口存活期间任何时刻）
+  const startResumePolling = () => setInterval(async () => { try { const r = await window.ct.resumeTake(); if (r) await applyResume(r); } catch { /* ignore */ } }, 5000);
+  tryApplyResume().then((ok) => { if (!ok) startResumePolling(); }).catch(() => startResumePolling());
 </script>
 </body>
 </html>

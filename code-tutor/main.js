@@ -91,6 +91,8 @@ function enforceSize() {
 }
 
 ipcMain.handle('ct:getMode', () => (collapsed ? 'ball' : 'full'));
+/* 任务名/端口传给渲染层：preload 里 process.argv 在沙箱模式下不可靠，经 IPC 下发 */
+ipcMain.handle('ct:config', () => ({ task: TASK, port: CTRL_PORT }));
 
 ipcMain.on('ct:collapse', () => { if (!collapsed) toggleCollapse(); });
 ipcMain.on('ct:expand', () => { if (collapsed) toggleCollapse(); });
