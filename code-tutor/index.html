@@ -347,6 +347,7 @@
       <div id="histResumeBar" style="display:none; flex:none; padding:6px 10px; background:rgba(79,140,255,0.12); color:var(--text); font-size:12px; border-bottom:1px solid rgba(255,255,255,0.1);">
         载入到哪一轮？
         <div id="histResumeList" style="margin-top:6px; max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"></div>
+      <div id="histPreview" style="display:none; margin-top:6px; padding:6px 8px; background:rgba(79,140,255,0.1); border:1px solid var(--accent); border-radius:6px; font-size:11.5px; line-height:1.5; color:var(--text); max-height:110px; overflow-y:auto; white-space:pre-wrap; word-break:break-word; user-select:text;"></div>
       </div>
       <div id="histBody" class="md"></div>
     </div>
@@ -851,6 +852,12 @@
       label.innerHTML = '<input type="radio" name="histround" value="' + i + '"' + (i === histRounds.length - 1 ? ' checked' : '') + '> '
         + r.time + ' ' + (r.who === 'user' ? '【我】' : '【Tutor】') + preview.replace(/</g, '&lt;');
       label.setAttribute('data-full', full.replace(/"/g, '&quot;').replace(/</g, '&lt;'));
+      label.title = full;
+      label.addEventListener('mouseenter', () => {
+        const pv = document.getElementById('histPreview');
+        pv.textContent = full;
+        pv.style.display = 'block';
+      });
       list.appendChild(label);
     });
   };
