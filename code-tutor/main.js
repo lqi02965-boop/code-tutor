@@ -506,9 +506,26 @@ async function memAppend(entry) {
   return { ok: true, file };
 }
 
-/** GET /memory/list?task= -> md files in that task's sub-vault, newest first */
+/** GET /memory/list?task= -> md files; task='__all__' 时聚合父库全部子库（按修改时间排序） */
 async function memList(task) {
   try {
+    if (task === '__all__') {
+      const out = [];
+      for (const t of await taskList()) {
+        const dir = path.join(VAULT_ROOT, '任务-' + t, '对话记录');
+        let names = [];
+        try { names = await fsp.readdir(dir); } catch { continue; }
+        for (const n of names.filter((n) => n.endsWith('.md'))) {
+          const full = path.join(dir, n);
+          try {
+            const st = await fsp.stat(full);
+            out.push({ task: t, name: n, mtime: st.mtimeMs });
+          } catch { /* skip */ }
+        }
+      }
+      out.sort((a, b) => b.mtime - a.mtime);
+      return out;
+    }
     const dir = task === TASK ? MEM_DIR : path.join(VAULT_ROOT, '任务-' + task, '对话记录');
     const names = await fsp.readdir(dir);
     return names.filter((n) => n.endsWith('.md')).sort().reverse();
@@ -672,7 +689,7 @@ function startControlServer() {
         return;
       }
       if (urlPath === '/memory/list' && req.method === 'GET') {
-        // ?task= 可选：查看其他任务的子库（缺省 = 当前任务）
+        // ?task=__all__ 聚合父库全部子库；?task=xx 指定任务；缺省 = 当前任务
         const q = new URL(req.url, 'http://x').searchParams;
         const t = String(q.get('task') || TASK).replace(/[\\/:*?"<>|]/g, '_');
         memList(t).then((files) => send(200, { ok: true, files, current: TASK }), (err) => send(500, { ok: false, error: err.message }));

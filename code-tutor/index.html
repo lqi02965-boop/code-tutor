@@ -731,42 +731,52 @@
   const histLayer = $('historyLayer');
   let histCurrentName = null;   // 当前打开的日期文件
   let histRounds = [];          // 解析出的轮次 [{who, text}]
-  let histTask = null;          // 当前查看的任务（= 本窗口任务则为 null，续聊只在同任务下允许）
+  let histTask = null;          // 当前查看的任务：null=本任务，'__all__'=聚合，其他=指定任务
+  let histViewTask = null;      // 当前打开的文件真实所属任务（聚合视图下用）
 
-  /** 渲染任务切换行 */
+  /** 渲染任务切换行（首项 = 全部，聚合父库所有子库） */
   async function renderTaskRow() {
     const row = $('histTasks');
     row.querySelectorAll('.histFile').forEach((x) => x.remove());
     let tasks = [], current = 'default';
     try { ({ tasks, current } = await window.ct.tasks()); } catch {}
     if (!tasks.includes(current)) tasks.unshift(current);
-    for (const t of tasks) {
+    const mk = (label, taskVal) => {
       const b = document.createElement('button');
-      b.className = 'histFile' + (t === histTask ? ' active' : '');
-      b.textContent = t;
-      b.onclick = () => { histTask = t; renderTaskRow(); loadDayList(); };
+      b.className = 'histFile' + (taskVal === histTask ? ' active' : '');
+      b.textContent = label;
+      b.onclick = () => { histTask = taskVal; renderTaskRow(); loadDayList(); };
       row.appendChild(b);
-    }
+    };
+    mk('全部', '__all__');
+    for (const t of tasks) mk(t, t);
   }
 
-  /** 载入当前选中任务的日期列表 */
+  /** 载入日期列表（'__all__' = 聚合父库全部子库，文件名带任务前缀） */
   async function loadDayList() {
+    const isAll = histTask === '__all__';
     let files = [];
-    try { ({ files } = await window.ct.memList(histTask || undefined)); } catch {}
+    try {
+      const r = await window.ct.memList(isAll ? '__all__' : (histTask || undefined));
+      files = Array.isArray(r) ? r : (r.files || []);
+    } catch {}
     const box = $('histFiles');
     box.innerHTML = '';
-    $('histBody').innerHTML = files.length === 0 ? '<p>（该任务还没有记录。对话会自动保存到它的子库。）</p>' : '<p>加载中…</p>';
+    $('histBody').innerHTML = files.length === 0 ? '<p>（该任务还没有记录。对话会自动保存到它的子库；点上方"全部"可看所有任务的记录。）</p>' : '<p>加载中…</p>';
     if (files.length === 0) return;
-    files.forEach((name) => {
+    files.forEach((f) => {
+      const name = typeof f === 'string' ? f : f.name;
+      const taskTag = typeof f === 'object' ? f.task : (histTask || window.ct.task);
       const b = document.createElement('button');
       b.className = 'histFile';
-      b.textContent = name.replace('.md', '');
+      b.textContent = (isAll ? '[' + taskTag + '] ' : '') + name.replace('.md', '');
       b.onclick = async () => {
         box.querySelectorAll('.histFile').forEach((x) => x.classList.remove('active'));
         b.classList.add('active');
         histCurrentName = name;
+        histViewTask = taskTag;   // 该文件真实所属任务（聚合视图下与本窗口任务不同）
         try {
-          const md = await window.ct.memRead(name, histTask || undefined);
+          const md = await window.ct.memRead(name, taskTag);
           histRounds = parseMemMd(md);
           $('histBody').innerHTML = renderMd(md);  // renderMd 内部已先转义，安全
         } catch (e) { $('histBody').innerHTML = '<p>读取失败: ' + e.message + '</p>'; }
@@ -775,7 +785,6 @@
     });
     box.firstChild.click(); // 默认打开最新一天
   }
-
   $('btnHistory').onclick = async () => {
     histLayer.classList.add('open');
     $('histResumeBar').style.display = 'none';
@@ -842,11 +851,12 @@
       if (!sel) return;
       const upto = +sel.value;
       const picked = histRounds.slice(0, upto + 1);
-      if (histTask && histTask !== window.ct.task) {
+      const ownerTask = histTask === '__all__' ? histViewTask : histTask;
+      if (ownerTask && ownerTask !== window.ct.task) {
         // 跨任务：拉起/聚焦目标任务窗口，并把选中的对话预载给它
-        window.ct.launch(histTask, picked).then((j) => {
+        window.ct.launch(ownerTask, picked).then((j) => {
           if (j && j.ok) {
-            addMsg('—— 正在打开任务「' + histTask + '」' + (j.already ? '（窗口已在运行，将聚焦并载入）' : '') + '，载入 ' + picked.length + ' 轮对话 ——', 'ai', null, { skipSave: true });
+            addMsg('—— 正在打开任务「' + ownerTask + '」' + (j.already ? '（窗口已在运行，将聚焦并载入）' : '') + '，载入 ' + picked.length + ' 轮对话 ——', 'ai', null, { skipSave: true });
             histLayer.classList.remove('open');
             $('histResumeBar').style.display = 'none';
           } else {
