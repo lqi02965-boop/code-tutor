@@ -590,7 +590,7 @@
     chatting = true;
     if (lastOptionWrap) { disableOptions(lastOptionWrap); lastOptionWrap = null; }
     if (displayText !== undefined) addMsg(displayText, 'user');
-    const thinking = addMsg('思考中…', 'ai');
+    const thinking = addMsg('思考中…', 'ai', null, { skipSave: true });
     try {
       const answer = await window.ct.chat(text, history.slice(-8));
       thinking.div.textContent = '思考中…';
@@ -625,7 +625,7 @@
     if (chatting) { addMsg('（上一条还在处理中…）', 'ai', null, { skipSave: true }); return; }
     chatting = true;
     addMsg('【检验代码】', 'user');
-    const thinking = addMsg('检验中：正在读取你的代码…', 'ai');
+    const thinking = addMsg('检验中：正在读取你的代码…', 'ai', null, { skipSave: true });
     try {
       // 1. 真实读取用户代码
       let iicC = '', iicH = '';

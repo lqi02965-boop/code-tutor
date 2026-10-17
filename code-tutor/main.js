@@ -164,6 +164,8 @@ async function taskList() {
  * preload: 可选 [{who, text}]，新窗口/已有窗口载入后作为初始上下文直接续聊。
  * 实现：写一份"待载入上下文"到该任务子库的 .resume.json，目标实例启动/轮询时取走并应用到会话。 */
 async function launchTask(task, preload) {
+  const dbg = (m) => { try { fsp.appendFile(path.join(VAULT_ROOT, 'launch-debug.log'), new Date().toISOString().slice(11, 23) + ' ' + m + '\n').catch(() => {}); } catch {} };
+  dbg('launchTask enter task=' + task);
   const clean = String(task || '').replace(/[\\/:*?"<>|]/g, '_').trim();
   if (!clean) throw new Error('任务名不能为空');
   // 写续接上下文文件（无论目标是否已在跑，实例就绪后都会取）
@@ -172,8 +174,10 @@ async function launchTask(task, preload) {
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(path.join(dir, '.resume.json'), JSON.stringify({ rounds: preload, at: Date.now() }), 'utf8');
   }
+  dbg('resume written, probing running set');
   const running = await taskRunningSet();
-  if (running.has(clean)) return { ok: true, already: true, task: clean };
+  dbg('running set: ' + [...running].join(','));
+  if (running.has(clean)) { dbg('already running, skip spawn'); return { ok: true, already: true, task: clean }; }
   const selfDir = __dirname;
   const exe = path.join(selfDir, 'electron.exe');
   // 找空闲端口
@@ -192,16 +196,54 @@ async function launchTask(task, preload) {
   // （宿主 DSH 环境带着 =1，继承后新实例变纯 node 模式秒退；bat 壳方案已验证冗余）
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawnProc(exe, [selfDir, '--task=' + clean, '--port=' + freePort], {
-    cwd: selfDir,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-    env,
-  });
+  let child;
+  try {
+    child = spawnProc(exe, [selfDir, '--task=' + clean, '--port=' + freePort], {
+      cwd: selfDir,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env,
+    });
+  } catch (e) {
+    dbg('spawn threw: ' + e.message);
+    return { ok: false, error: '启动进程失败: ' + e.message };
+  }
+  dbg('spawned pid=' + child.pid + ' port=' + freePort);
   child.on('error', (e) => { try { fsp.appendFile(path.join(VAULT_ROOT, 'launch-debug.log'), new Date().toISOString() + ' spawn error: ' + e.message + '\n').catch(() => {}); } catch {} });
   child.on('exit', (code) => { try { fsp.appendFile(path.join(VAULT_ROOT, 'launch-debug.log'), new Date().toISOString() + ' child exit: ' + code + '\n').catch(() => {}); } catch {} });
   child.unref();
+  // 等新实例控制服务就绪 → 主动 show + focus（否则窗口可能停在隐藏状态，用户看到"一直加载不出来"）
+  (async () => {
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const st = await new Promise((resolve, reject) => {
+          const req = http.get('http://127.0.0.1:' + freePort + '/status', { timeout: 1500 }, (res) => {
+            let d = '';
+            res.on('data', (c) => d += c);
+            res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+          });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        });
+        if (st && st.running) {
+          await new Promise((resolve, reject) => {
+            const body = '{}';
+            const req = http.request('http://127.0.0.1:' + freePort + '/show', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'content-length': body.length },
+              timeout: 3000,
+            }, (res) => { res.resume(); resolve(); });
+            req.on('error', reject);
+            req.end(body);
+          });
+          try { fsp.appendFile(path.join(VAULT_ROOT, 'launch-debug.log'), new Date().toISOString() + ' shown task=' + clean + ' port=' + freePort + '\n').catch(() => {}); } catch {}
+          return;
+        }
+      } catch { /* retry */ }
+    }
+  })();
   return { ok: true, task: clean, port: freePort };
 }
 
@@ -359,43 +401,54 @@ async function classifyRound(text) {
   } catch { return TASK; }
 }
 
-/** 当前已在运行的任务集合（探测各实例 /tasks） */
+/** 当前已在运行的任务集合（探测各实例 /tasks）。
+ * 整体 3s 超时兜底：探测卡死时宁可当成"没在跑"重新 spawn（同任务由单实例锁兜底聚焦），绝不无限等待。 */
 function taskRunningSet() {
-  return new Promise(async (resolve) => {
-    const set = new Set([TASK]); // 本实例肯定在跑
-    const tasks = await taskList();
-    let pending = tasks.length;
-    if (pending === 0) return resolve(set);
-    for (const t of tasks) {
-      if (t === TASK) { pending--; continue; }
-      // 从索引文件拿不到端口，逐个探测常见端口段 19290-19299
-      probeTask(t, 19290).then((found) => {
-        if (found) set.add(t);
-        if (--pending === 0) resolve(set);
-      });
-    }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(new Set([TASK])), 3000);
+    (async () => {
+      const set = new Set([TASK]); // 本实例肯定在跑
+      const tasks = await taskList();
+      const others = tasks.filter((t) => t !== TASK);
+      if (others.length === 0) { clearTimeout(timer); return resolve(set); }
+      let pending = others.length;
+      for (const t of others) {
+        probeTask(t, 19290).then((found) => {
+          if (found) set.add(t);
+          if (--pending === 0) { clearTimeout(timer); resolve(set); }
+        });
+      }
+    })().catch(() => { clearTimeout(timer); resolve(new Set([TASK])); });
   });
 }
 
 function probeTask(task, port) {
   return new Promise((resolve) => {
     let p = port;
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    // 单任务探测总超时 1.5s（10 个端口 × 800ms 太慢，快速放弃）
+    const total = setTimeout(() => finish(false), 1500);
     const tryNext = () => {
-      if (p > 19299) return resolve(false);
-      const req = http.get('http://127.0.0.1:' + p + '/tasks', { timeout: 800 }, (res) => {
+      if (done) return;
+      if (p > 19299) { clearTimeout(total); return finish(false); }
+      const req = http.get('http://127.0.0.1:' + p + '/tasks', { timeout: 300 }, (res) => {
         let data = '';
         res.on('data', (c) => data += c);
         res.on('end', () => {
+          if (done) return;
           try {
             const j = JSON.parse(data);
-            if (j.ok && j.current === task) return resolve(true);
-            if (j.ok && Array.isArray(j.tasks) && j.tasks.includes(task)) return resolve(true);
+            // ⚠️ 只认 j.current：/tasks 的 tasks 数组是"父库里所有子库"（含未运行的），不能作为运行依据
+            if (j.ok && j.current === task) {
+              clearTimeout(total); return finish(true);
+            }
           } catch { /* not json */ }
-          tryNext();
+          p++; tryNext();
         });
       });
-      req.on('error', () => { p++; tryNext(); });
-      req.on('timeout', () => { req.destroy(); p++; tryNext(); });
+      req.on('error', () => { if (!done) { p++; tryNext(); } });
+      req.on('timeout', () => { req.destroy(); if (!done) { p++; tryNext(); } });
     };
     tryNext();
   });
