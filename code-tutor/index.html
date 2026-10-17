@@ -98,8 +98,21 @@
     flex: none; padding: 3px 10px; font-size: 11.5px;
     background: var(--bg-light); color: var(--text-dim);
     border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%; display: inline-block; position: relative;
   }
   .histFile.active { color: #fff; border-color: var(--accent); background: rgba(79,140,255,0.2); }
+  /* 悬浮显示完整内容（被省略号截断的部分） */
+  .histFile:hover::after {
+    content: attr(data-full);
+    position: absolute; left: 0; top: 100%; z-index: 80;
+    min-width: 240px; max-width: 420px; white-space: normal;
+    background: #1c1f27; color: var(--text);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 6px 9px; font-size: 11.5px; line-height: 1.5;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+    pointer-events: none; text-align: left;
+  }
   #histBody {
     flex: 1; overflow-y: auto; padding: 10px 12px;
     font-size: 12.5px; line-height: 1.6; color: var(--text);
@@ -827,15 +840,17 @@
     const list = $('histResumeList');
     list.innerHTML = '';
     bar.style.display = 'block';
-    // 每个轮次一个候选点；默认勾选最后一条
+    // 每个轮次一个候选点；默认勾选最后一条；悬浮显示全文
     histRounds.forEach((r, i) => {
       const label = document.createElement('label');
       label.className = 'histFile';
       label.style.display = 'block';
       label.style.whiteSpace = 'nowrap'; label.style.overflow = 'hidden'; label.style.textOverflow = 'ellipsis';
       const preview = (r.who === 'user' ? r.text : r.text.replace(/\n/g, ' ')).slice(0, 40);
+      const full = (r.who === 'user' ? r.text : r.text.replace(/\n/g, ' ')).slice(0, 400);
       label.innerHTML = '<input type="radio" name="histround" value="' + i + '"' + (i === histRounds.length - 1 ? ' checked' : '') + '> '
         + r.time + ' ' + (r.who === 'user' ? '【我】' : '【Tutor】') + preview.replace(/</g, '&lt;');
+      label.setAttribute('data-full', full.replace(/"/g, '&quot;').replace(/</g, '&lt;'));
       list.appendChild(label);
     });
   };
@@ -850,7 +865,7 @@
       const sel = document.querySelector('input[name="histround"]:checked');
       if (!sel) return;
       const upto = +sel.value;
-      const picked = histRounds.slice(0, upto + 1);
+      const picked = histRounds.slice(0, upto + 1).filter((r) => r.who === 'user');  // 只带用户消息，AI 回答不占跳转 token
       const ownerTask = histTask === '__all__' ? histViewTask : histTask;
       if (ownerTask && ownerTask !== window.ct.task) {
         // 跨任务：拉起/聚焦目标任务窗口，并把选中的对话预载给它
@@ -866,12 +881,14 @@
         return;
       }
       // 本任务：直接载入
-      // 1. 恢复 LLM 上下文
+      // 1. 恢复 LLM 上下文——只取用户消息（AI 回答太长占 token；且 ask() 发送时会带记忆库的对话流，AI 可从中推断上下文）
       history.length = 0;
-      for (const r of picked) history.push({ text: r.text, who: r.who });
-      // 2. 重放到当前对话区
+      for (const r of picked) {
+        if (r.who === 'user') history.push({ text: r.text, who: 'user' });
+      }
+      // 2. 重放到当前对话区（界面显示保留完整轮次，方便回看）
       messages.innerHTML = '';
-      addMsg('—— 已从记忆库「' + (histCurrentName || '').replace('.md', '') + '」载入 ' + picked.length + ' 轮对话，接着聊 ——', 'ai', null, { skipSave: true });
+      addMsg('—— 已从记忆库「' + (histCurrentName || '').replace('.md', '') + '」载入 ' + picked.length + ' 轮对话（上下文只含你的发言），接着聊 ——', 'ai', null, { skipSave: true });
       for (const r of picked) addMsg(r.text, r.who);
       histLayer.classList.remove('open');
       $('histResumeBar').style.display = 'none';
