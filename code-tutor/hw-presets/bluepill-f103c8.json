@@ -1,0 +1,8 @@
+{
+  "mcu": "STM32F103C8T6",
+  "library": "标准外设库",
+  "board": "Blue Pill",
+  "clock": "HSE 8MHz × 9 = 72MHz",
+  "peripherals": [],
+  "notes": "64K Flash / 20K RAM，中容量（宏 STM32F10X_MD）；板载 LED PC13 低电平点亮"
+}

@@ -156,6 +156,11 @@ export function apply(ctx, config = {}) {
       ? SYSTEM_PROMPT + '\n\n【会话上下文快照（本开发项目的对话史与代码位置）】\n' + ctxDoc
       : SYSTEM_PROMPT;
     const messages = [createSystemMessage(system)];
+    // 硬件档案注入（悬浮窗随请求带上；老版本悬浮窗没有该字段则跳过）
+    const hw = typeof payload.hw === 'string' && payload.hw.trim() ? payload.hw.trim() : '';
+    if (hw) {
+      messages.push(createSystemMessage(hw));
+    }
     for (const turn of Array.isArray(history) ? history.slice(-8) : []) {
       if (typeof turn?.text !== 'string' || turn.text.length === 0) continue;
       messages.push(createUserMessage({

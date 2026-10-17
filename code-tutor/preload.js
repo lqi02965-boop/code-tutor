@@ -57,6 +57,22 @@ contextBridge.exposeInMainWorld('ct', {
       if (j.ok) return { tasks: j.tasks || [], current: j.current };
       throw new Error(String(j.error || 'tasks failed'));
     }),
+  // 硬件档案（per task，存 任务-<task>/hw_profile.json）
+  hwGet: () => fetch(BASE + '/hw/get')
+    .then((r) => r.json()).then((j) => {
+      if (j.ok) return j.hw || {};
+      throw new Error(String(j.error || 'hw get failed'));
+    }),
+  hwSave: (profile) => fetch(BASE + '/hw/save', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(profile),
+  }).then((r) => r.json()).then((j) => {
+    if (j.ok) return true;
+    throw new Error(String(j.error || 'hw save failed'));
+  }),
+  hwPresets: () => fetch(BASE + '/hw/presets')
+    .then((r) => r.json()).then((j) => (j.ok ? j.presets || [] : [])),
   // 跨任务跳转：拉起/聚焦目标任务窗口并预载对话上下文
   launch: (task, preload) => fetch(BASE + '/launch', {
     method: 'POST',

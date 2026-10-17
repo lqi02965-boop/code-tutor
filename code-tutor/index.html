@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -117,6 +117,42 @@
     font-family: Consolas, monospace; font-size: 11.5px; }
   #histBody strong { color: #fff; }
 
+  /* ---------- 硬件档案设置层 ---------- */
+  #hwLayer {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(0,0,0,0.55);
+    display: none; padding: 14px;
+  }
+  #hwLayer.open { display: block; }
+  #hwPanel {
+    width: 100%; height: 100%;
+    background: var(--bg); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #hwHead {
+    flex: none; height: 36px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px; background: var(--bg-light); color: var(--text); font-size: 12.5px;
+  }
+  #hwForm { flex: 1; overflow-y: auto; padding: 10px 12px; }
+  #hwForm label { display: block; font-size: 12px; color: var(--text-dim); margin: 8px 0; }
+  #hwForm input, #hwForm select, #hwForm textarea {
+    display: block; width: 100%; margin-top: 3px;
+    padding: 6px 8px; background: rgba(0,0,0,0.3); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 6px;
+    font-size: 12.5px; font-family: inherit; outline: none; user-select: text;
+  }
+  #hwForm input:focus, #hwForm select:focus, #hwForm textarea:focus { border-color: var(--accent); }
+  .hwperi {
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+    padding: 8px; margin: 6px 0; background: rgba(255,255,255,0.03);
+  }
+  .hwperi .row { display: flex; gap: 6px; margin-bottom: 5px; }
+  .hwperi .row input { margin-top: 0; flex: 1; }
+  .hwperi .row input.small { flex: 0 0 70px; }
+  .hwperi .del { cursor: pointer; color: #ff7a7a; font-size: 11px; background: none; border: none; padding: 2px; }
+  #hwFoot { flex: none; padding: 8px 12px; border-top: 1px solid rgba(255,255,255,0.08); }
+  #hwFoot .optbtn { width: 100%; background: var(--accent); color: #fff; border: none; }
+
   /* ---------- 选项按钮（A/B/C 决策） ---------- */
   .optrow { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
   .optbtn {
@@ -129,6 +165,17 @@
   .optbtn:hover { border-color: var(--accent); background: rgba(79,140,255,0.15); }
   .optbtn.optdone { opacity: 0.4; cursor: default; }
   .optbtn.optdone:hover { border-color: rgba(255,255,255,0.12); background: var(--bg-light); }
+  /* 自定义选项输入行 */
+  .optcustom { display: flex; gap: 6px; align-items: center; }
+  .optcustom-input {
+    flex: 1; padding: 6px 10px;
+    background: rgba(0,0,0,0.3); color: var(--text);
+    border: 1px dashed rgba(255,255,255,0.25);
+    border-radius: 8px; font-size: 12.5px; font-family: inherit;
+    outline: none; user-select: text;
+  }
+  .optcustom-input:focus { border-color: var(--accent); border-style: solid; }
+  .optcustom-input::placeholder { color: var(--text-dim); }
 
   /* ---------- HTML 图示渲染 ---------- */
   .htmlfig { position: relative; margin: 8px 0 14px; }
@@ -219,6 +266,7 @@
       <div id="title">Code Tutor · <span id="taskName">…</span></div>
       <!-- 右侧功能条：最小化 / 收起小球 / 关闭 -->
       <div id="winbtns">
+        <button class="wb" id="wbHw" title="硬件档案：填写你的芯片/外设/引脚，AI 回答将与硬件一致">&#x2699;</button>
         <button class="wb" id="wbNew" title="多开：新建一个任务窗口">&#xFF0B;</button>
         <button class="wb" id="wbMin" title="最小化（隐藏到托盘）">&#x2500;</button>
         <button class="wb" id="wbBall" title="收起成小球">&#x26EC;</button>
@@ -233,6 +281,40 @@
         <button id="btnCheck" class="secondary">检验代码</button>
         <button id="btnCode" class="secondary">给我代码</button>
         <button id="btnHistory" class="secondary" title="查看之前保存到记忆库的对话">历史</button>
+      </div>
+    </div>
+  </div>
+  <div id="hwLayer">
+    <div id="hwPanel">
+      <div id="hwHead">
+        <span>⚙ 硬件档案 <span style="font-size:11px;color:var(--text-dim)">（本任务：任务-<span id="hwTask"></span>）</span></span>
+        <div style="display:flex; gap:6px;">
+          <button id="hwImport" class="copybtn" style="position:static" title="从 JSON 文件内容导入">导入</button>
+          <button id="hwExport" class="copybtn" style="position:static" title="复制 JSON，可分享给别人或放进预设库">导出</button>
+          <button id="hwClose" class="copybtn" style="position:static">关闭</button>
+        </div>
+      </div>
+      <div id="hwForm">
+        <label>MCU 型号 *<input id="hwMcu" placeholder="如 STM32F103C8T6"></label>
+        <label>库类型
+          <select id="hwLib">
+            <option value="">（未选）</option>
+            <option>标准外设库</option>
+            <option>HAL</option>
+            <option>LL</option>
+            <option>寄存器直接操作</option>
+            <option>Arduino / 其他</option>
+          </select>
+        </label>
+        <label>板卡（可选）<input id="hwBoard" placeholder="如 Blue Pill / Nucleo-F103 / 自制板"></label>
+        <label>时钟（可选）<input id="hwClock" placeholder="如 HSE 8MHz × 9 = 72MHz"></label>
+        <div id="hwPeriList"></div>
+        <button id="hwAddPeri" class="copybtn" style="position:static" title="添加一个外设">＋ 添加外设</button>
+        <label>其他补充<textarea id="hwNotes" rows="2" placeholder="调试器、供电方式、特殊注意事项…"></textarea></label>
+        <div id="hwMsg" style="display:none; font-size:11.5px; margin:4px 0;"></div>
+      </div>
+      <div id="hwFoot">
+        <button id="hwSaveBtn" class="optbtn" style="text-align:center">保存（保存后每次问话自动带上这些硬件事实）</button>
       </div>
     </div>
   </div>
@@ -436,7 +518,7 @@
       div.className = 'msg ' + who;
       div.textContent = parsed.body;
       wrap.appendChild(div);
-    }    // 选项按钮（像 Harness 的 A/B/C 选择）
+    }    // 选项按钮（像 Harness 的 A/B/C 选择）+ 自定义输入选项
     if (parsed.options && onOptions) {
       const optrow = document.createElement('div');
       optrow.className = 'optrow';
@@ -450,6 +532,30 @@
         };
         optrow.appendChild(btn);
       }
+      // 额外的自定义选项：用户自己输入想法（选它会把输入内容发给 LLM）
+      const custom = document.createElement('div');
+      custom.className = 'optcustom';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = '其他想法？自己写…（Enter 发送）';
+      input.className = 'optcustom-input';
+      const send = () => {
+        const v = input.value.trim();
+        if (!v) return;
+        disableOptions(wrap);
+        onOptions('自定义', v);
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); send(); }
+        e.stopPropagation(); // 别让外层快捷键（全局 Enter 发送）抢走
+      });
+      const go = document.createElement('button');
+      go.className = 'copybtn'; go.style.position = 'static';
+      go.textContent = '发送';
+      go.onclick = send;
+      custom.appendChild(input);
+      custom.appendChild(go);
+      optrow.appendChild(custom);
       wrap.appendChild(optrow);
     }
     // AI 消息带复制按钮（点按钮复制全文，不用手动划选）
@@ -490,8 +596,12 @@
       thinking.div.textContent = '思考中…';
       thinking.div.remove(); // 用正式回答替换占位
       const result = addMsg(answer, 'ai', (key, label) => {
-        // 用户点了选项：把选择作为新输入发出
-        ask('我选择 ' + key + '（' + label + '）', '我选择：' + key + '. ' + label);
+        // 用户点了选项：把选择作为新输入发出（key='自定义' 时 label 就是用户输入的原文）
+        if (key === '自定义') {
+          ask(label, label);
+        } else {
+          ask('我选择 ' + key + '（' + label + '）', '我选择：' + key + '. ' + label);
+        }
       });
       if (result.wrap.querySelector('.optbtn')) lastOptionWrap = result.wrap;
       history.push({ text, who: 'user' }, { text: answer, who: 'ai' });
@@ -542,7 +652,11 @@
       const answer = await window.ct.chat(prompt, history.slice(-6));
       thinking.div.remove();
       addMsg(answer, 'ai', (key, label) => {
-        ask('我选择 ' + key + '（' + label + '）', '我选择：' + key + '. ' + label);
+        if (key === '自定义') {
+          ask(label, label);
+        } else {
+          ask('我选择 ' + key + '（' + label + '）', '我选择：' + key + '. ' + label);
+        }
       });
       history.push({ text: '【检验代码】', who: 'user' }, { text: answer, who: 'ai' });
     } catch (err) {
@@ -758,6 +872,121 @@
 
   // 任务名显示
   $('taskName').textContent = window.ct.task || 'default';
+
+  // ---------- 硬件档案设置层 ----------
+  const hwLayer = $('hwLayer');
+  $('hwTask').textContent = window.ct.task || 'default';
+
+  function periRow(p = {}) {
+    const div = document.createElement('div');
+    div.className = 'hwperi';
+    div.innerHTML = '<div class="row">'
+      + '<input class="p-name" placeholder="外设名，如 OLED 0.96寸" value="' + (p.name || '').replace(/"/g, '&quot;') + '">'
+      + '<button class="del" title="删除此外设">✕</button></div>'
+      + '<div class="row">'
+      + '<input class="p-protocol small" placeholder="协议" value="' + (p.protocol || '') + '">'
+      + '<input class="p-address small" placeholder="地址" value="' + (p.address || '') + '">'
+      + '<input class="p-pins" placeholder="引脚，如 PB8=SCL,PB9=SDA" value="' + (p.pins || '').replace(/"/g, '&quot;') + '">'
+      + '</div>';
+    div.querySelector('.del').onclick = () => div.remove();
+    return div;
+  }
+
+  async function hwOpen() {
+    hwLayer.classList.add('open');
+    const hw = await window.ct.hwGet();
+    $('hwMcu').value = hw.mcu || '';
+    $('hwLib').value = hw.library || '';
+    $('hwBoard').value = hw.board || '';
+    $('hwClock').value = hw.clock || '';
+    $('hwNotes').value = hw.notes || '';
+    const list = $('hwPeriList');
+    list.innerHTML = '';
+    for (const p of (hw.peripherals || [])) list.appendChild(periRow(p));
+    $('hwMsg').style.display = 'none';
+  }
+  $('wbHw').onclick = hwOpen;
+  $('hwClose').onclick = () => hwLayer.classList.remove('open');
+  hwLayer.addEventListener('click', (e) => { if (e.target === hwLayer) hwLayer.classList.remove('open'); });
+  $('hwAddPeri').onclick = () => $('hwPeriList').appendChild(periRow());
+
+  $('hwSaveBtn').onclick = async () => {
+    const profile = {
+      mcu: $('hwMcu').value.trim(),
+      library: $('hwLib').value,
+      board: $('hwBoard').value.trim(),
+      clock: $('hwClock').value.trim(),
+      notes: $('hwNotes').value.trim(),
+      peripherals: [...$('hwPeriList').querySelectorAll('.hwperi')].map((d) => ({
+        name: d.querySelector('.p-name').value.trim(),
+        protocol: d.querySelector('.p-protocol').value.trim(),
+        address: d.querySelector('.p-address').value.trim(),
+        pins: d.querySelector('.p-pins').value.trim(),
+      })).filter((p) => p.name),
+    };
+    const msg = $('hwMsg');
+    try {
+      await window.ct.hwSave(profile);
+      msg.textContent = '✅ 已保存。之后的每次提问都会自动带上这些硬件事实。';
+      msg.style.color = '#7fe08f';
+    } catch (e) {
+      msg.textContent = '保存失败：' + e.message;
+      msg.style.color = '#ff7a7a';
+    }
+    msg.style.display = 'block';
+    setTimeout(() => { msg.style.display = 'none'; }, 4000);
+  };
+
+  $('hwExport').onclick = async () => {
+    // 导出 = 读取当前表单组合成 JSON 复制到剪贴板（不强制先保存）
+    const profile = {
+      mcu: $('hwMcu').value.trim(), library: $('hwLib').value,
+      board: $('hwBoard').value.trim(), clock: $('hwClock').value.trim(),
+      notes: $('hwNotes').value.trim(),
+      peripherals: [...$('hwPeriList').querySelectorAll('.hwperi')].map((d) => ({
+        name: d.querySelector('.p-name').value.trim(),
+        protocol: d.querySelector('.p-protocol').value.trim(),
+        address: d.querySelector('.p-address').value.trim(),
+        pins: d.querySelector('.p-pins').value.trim(),
+      })).filter((p) => p.name),
+    };
+    navigator.clipboard.writeText(JSON.stringify(profile, null, 2)).then(() => {
+      $('hwExport').textContent = '已复制 JSON';
+      setTimeout(() => { $('hwExport').textContent = '导出'; }, 1500);
+    });
+  };
+
+  $('hwImport').onclick = () => {
+    // 导入 = 弹出 textarea 让用户粘贴 JSON（浏览器文件选择需额外权限，粘贴最通用）
+    const bar = $('hwMsg');
+    const ta = document.createElement('textarea');
+    ta.rows = 5; ta.style.cssText = 'width:100%;margin-top:6px;background:rgba(0,0,0,0.3);color:var(--text);border:1px solid rgba(255,255,255,0.2);border-radius:6px;font-size:11.5px;user-select:text;';
+    ta.placeholder = '粘贴硬件档案 JSON（可从别人的"导出"获得，或自己写）';
+    const apply = document.createElement('button');
+    apply.className = 'copybtn'; apply.style.position = 'static'; apply.style.marginTop = '4px';
+    apply.textContent = '✓ 应用';
+    apply.onclick = () => {
+      try {
+        const j = JSON.parse(ta.value);
+        $('hwMcu').value = j.mcu || '';
+        $('hwLib').value = j.library || '';
+        $('hwBoard').value = j.board || '';
+        $('hwClock').value = j.clock || '';
+        $('hwNotes').value = j.notes || '';
+        const list = $('hwPeriList');
+        list.innerHTML = '';
+        for (const p of (j.peripherals || [])) list.appendChild(periRow(p));
+        ta.remove(); apply.remove();
+        bar.textContent = '已应用粘贴的档案，检查无误后点保存。';
+        bar.style.color = '#7fe08f'; bar.style.display = 'block';
+      } catch (e) {
+        bar.textContent = 'JSON 解析失败：' + e.message;
+        bar.style.color = '#ff7a7a'; bar.style.display = 'block';
+      }
+    };
+    $('hwForm').insertBefore(apply, $('hwPeriList'));
+    $('hwForm').insertBefore(ta, apply);
+  };
 
   // ---------- 跨任务跳转的预载上下文 ----------
   // 启动时取一次；若窗口已在运行（跳转聚焦场景），再短暂轮询几次兜底

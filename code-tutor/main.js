@@ -215,6 +215,70 @@ async function resumeTake() {
   } catch { return null; }
 }
 
+/* ---------- 硬件档案：用户填写/导入的硬件信息，问话时自动注入 prompt ---------- */
+function hwFile() { return path.join(VAULT_ROOT, '任务-' + TASK, 'hw_profile.json'); }
+
+const HW_DEFAULT = {
+  mcu: '',            // 芯片型号，如 STM32F103C8T6
+  library: '',        // 库类型：标准外设库 / HAL / LL
+  board: '',          // 板卡（可选）：Blue Pill / Nucleo...
+  peripherals: [],    // 外设：[{ name, protocol, address, pins }]
+  clock: '',          // 时钟：HSE 8MHz × 9 = 72MHz
+  notes: '',          // 其他补充
+  updatedAt: 0,
+};
+
+async function hwGet() {
+  try {
+    return { ...JSON.parse(await fsp.readFile(hwFile(), 'utf8')) };
+  } catch { return { ...HW_DEFAULT }; }
+}
+
+async function hwSave(profile) {
+  const clean = { ...HW_DEFAULT, ...profile, updatedAt: Date.now() };
+  await fsp.mkdir(path.dirname(hwFile()), { recursive: true });
+  await fsp.writeFile(hwFile(), JSON.stringify(clean, null, 2), 'utf8');
+  return { ok: true };
+}
+
+/** 把硬件档案渲染成注入 prompt 的文字块（无档案返回空串） */
+function hwRender(hw) {
+  if (!hw || !hw.mcu) return '';
+  const lines = ['【用户硬件档案】回答必须与这些硬件事实一致：'];
+  lines.push('- MCU：' + hw.mcu);
+  if (hw.library) lines.push('- 库类型：' + hw.library);
+  if (hw.board) lines.push('- 板卡：' + hw.board);
+  if (hw.clock) lines.push('- 时钟：' + hw.clock);
+  for (const p of (Array.isArray(hw.peripherals) ? hw.peripherals : [])) {
+    if (!p || !p.name) continue;
+    let l = '- 外设：' + p.name;
+    if (p.protocol) l += '，' + p.protocol;
+    if (p.address) l += '，地址 ' + p.address;
+    if (p.pins) l += '，引脚 ' + p.pins;
+    lines.push(l);
+  }
+  if (hw.notes) lines.push('- 补充：' + hw.notes);
+  return lines.join('\n');
+}
+
+/** 列出可用硬件预设（安装目录 hw-presets/ + 任务子库里的第三方 json） */
+async function hwPresets() {
+  const out = [];
+  for (const dir of [path.join(__dirname, 'hw-presets'), path.join(VAULT_ROOT, '任务-' + TASK)]) {
+    try {
+      const files = await fsp.readdir(dir);
+      for (const f of files) {
+        if (!f.endsWith('.json') || f === 'hw_profile.json') continue;
+        try {
+          const j = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8'));
+          if (j.mcu) out.push({ name: f.replace('.json', ''), preset: j });
+        } catch { /* skip bad json */ }
+      }
+    } catch { /* dir missing */ }
+  }
+  return out;
+}
+
 /* ---------- 自动任务分类：判断一轮对话属于哪个任务子库，属他库则搬家 ---------- */
 
 /** 从父库索引收集已知任务名 */
@@ -463,9 +527,12 @@ function keilBuild() {
   });
 }
 
-function askBridge(text, history) {
+async function askBridge(text, history) {
+  // 每次问话前取硬件档案，注入 prompt（有档案才带 hw 字段）
+  let hwBlock = '';
+  try { hwBlock = hwRender(await hwGet()); } catch { /* ignore */ }
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ text, history });
+    const body = JSON.stringify({ text, history, hw: hwBlock || undefined });
     const req = http.request(DSH_ORIGIN + '/code-tutor/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
@@ -580,6 +647,18 @@ function startControlServer() {
       }
       if (urlPath === '/resume/take' && req.method === 'GET') {
         resumeTake().then((r) => send(200, { ok: true, resume: r }), (err) => send(500, { ok: false, error: err.message }));
+        return;
+      }
+      if (urlPath === '/hw/get' && req.method === 'GET') {
+        hwGet().then((hw) => send(200, { ok: true, hw }), (err) => send(500, { ok: false, error: err.message }));
+        return;
+      }
+      if (urlPath === '/hw/save' && req.method === 'POST') {
+        hwSave(payload).then((r) => send(200, r), (err) => send(500, { ok: false, error: err.message }));
+        return;
+      }
+      if (urlPath === '/hw/presets' && req.method === 'GET') {
+        hwPresets().then((presets) => send(200, { ok: true, presets }), (err) => send(500, { ok: false, error: err.message }));
         return;
       }
       if (req.url === '/chat' && req.method === 'POST') {

@@ -1,0 +1,8 @@
+{
+  "mcu": "STM32F411CEU6",
+  "library": "HAL",
+  "board": "Black Pill",
+  "clock": "HSE 25MHz → PLL 96MHz",
+  "peripherals": [],
+  "notes": "512K Flash / 128K RAM；USB FS 可做虚拟串口"
+}
